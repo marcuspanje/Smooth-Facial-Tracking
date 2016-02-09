@@ -1,6 +1,9 @@
-#include "opencv2/objdetect.hpp"
-#include "opencv2/highgui.hpp"
-#include "opencv2/imgproc.hpp"
+/*
+#include <opencv2/objdetect/objdetect.hpp>
+#include <opencv2/highgui.hpp>
+#include <opencv2/imgproc.hpp>
+*/
+#include <opencv2/opencv.hpp>
 
 #include <iostream>
 #include <stdio.h>
@@ -28,6 +31,7 @@ void detectFaces(Mat frame) {
   // Detect faces
   face_cascade.detectMultiScale(frame_gray, faces, 1.1, 3,
 				0|CASCADE_SCALE_IMAGE, Size(30, 30));
+  std::cout << "#faces: " << faces.size() << "\n";
 
   // Iterate over all of the faces
   for( size_t i = 0; i < faces.size(); i++ ) {
@@ -52,7 +56,7 @@ int main() {
   Mat frame;
 
   // Load preconstructed classifier
-  face_cascade.load("haarcascade_frontalface_alt.xml");
+  face_cascade.load("src/classifiers/haarcascade_frontalface_alt.xml");
   
   while(cap.read(frame)) {
     detectFaces(frame); // Call function to detect faces

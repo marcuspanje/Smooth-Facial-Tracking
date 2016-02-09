@@ -1,6 +1,4 @@
-#include "opencv2/objdetect.hpp"
-#include "opencv2/highgui.hpp"
-#include "opencv2/imgproc.hpp"
+#include <opencv2/opencv.hpp>
 
 #include <iostream>
 #include <stdio.h>
@@ -23,8 +21,8 @@ int main() {
   Mat frame;
   Point priorCenter(0, 0);
 
-  face_cascade.load("haarcascade_frontalface_alt.xml"); // load face classifiers
-  eyes_cascade.load("haarcascade_eye_tree_eyeglasses.xml"); // load eye classifiers
+  face_cascade.load("classifiers/haarcascade_frontalface_alt.xml"); // load face classifiers
+  eyes_cascade.load("classifiers/haarcascade_eye_tree_eyeglasses.xml"); // load eye classifiers
 
   namedWindow(face_window,
 	      CV_WINDOW_AUTOSIZE |
