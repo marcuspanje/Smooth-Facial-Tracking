@@ -3,13 +3,16 @@
 #include <iostream>
 #include <stdio.h>
 #include <cmath>
+#include <algorithm>
 #define PI 3.14159
+#define DISPLAY 1
 
 using namespace std;
 using namespace cv;
 
 /* Function Headers */
-Point detectFace( Mat frame, Point priorCenter );
+Rect detectFace(Mat frame);
+Rect priorFace(0, 0, 0, 0);
 
 CascadeClassifier face_cascade, eyes_cascade;
 
@@ -17,50 +20,52 @@ String display_window = "Display";
 String face_window = "Face View";
 
 /*camera calibration matrices */
-Matx33f K_logitech(1517.6023, 0, 959.5,  0, 1517.6023, 539.5, 0, 0, 1);
-Matx33f K_facetime(1006.2413, 0, 639.5, 0, 1006.2413, 359.5, 0, 0, 1);
-double f_logitech = 1517.6023;
-double f_facetime = 1006.2413;
+Matx33f K_logitech(1517.6023, 0, 0, 0, 959.5,  0, 1517.6023, 539.5, 1);
+Matx33f K_facetime(1006.2413, 0, 0, 0, 1006.2413, 0, 639.5, 359.5, 1); //ordered by cols
 
 int main() {
 
   VideoCapture cap(0); // capture from default camera
   Mat frame;
-  Point priorCenter(0, 0);  
+  Rect face; //primary face;
+  Point faceCenter(0, 0);  
   Matx31f priorCenterH(0, 0, 1); 
   Matx31f priorCenter3D(0, 0, 0); 
- // Mat priorCenterHomogenous(3, 1, CV_64F);
-  //P priorCenter3D(0, 0, 0);
   double angle = 0;
   double angled = 0;
 
-  face_cascade.load("src/classifiers/haarcascade_frontalface_alt.xml"); // load face classifiers
-  eyes_cascade.load("src/classifiers/haarcascade_eye_tree_eyeglasses.xml"); // load eye classifiers
+  if (!(face_cascade.load("src/classifiers/haarcascade_frontalface_alt.xml"))) {
+    cout << "error loading face classifier" << endl;
+    return -1;
+  }
+  if (!(eyes_cascade.load("src/classifiers/haarcascade_eye_tree_eyeglasses.xml"))) {
+    cout << "error loading eye classifier" << endl;
+    return -1;
+  }
 
-  namedWindow(face_window,
-	      CV_WINDOW_AUTOSIZE |
-	      CV_WINDOW_FREERATIO |
+  namedWindow(display_window,
+	      CV_WINDOW_NORMAL |
+	      CV_WINDOW_KEEPRATIO |
 	      CV_GUI_EXPANDED);
   
   // Loop to capture frames
   while(cap.read(frame)) {
     
     // Apply the classifier to the frame, i.e. find face
-    priorCenter = detectFace(frame, priorCenter);
-    cout << "x: " << priorCenter.x << ", y: " << priorCenter.y << endl;
-
-
-    //convert to angle 
-    priorCenterH(1, 1) = priorCenter.x;
-    priorCenterH(2, 1) = priorCenter.y;
-
-    priorCenter3D = K_facetime.inv() * priorCenterH; 
-
-
-    angle = atan2(priorCenter3D(1, 1), priorCenter3D(3, 1)); //theta = arctan(x/z)
+    face = detectFace(frame);
+    faceCenter.x = face.x + face.width/2;
+    faceCenter.y = face.y + face.height/2;
+    angle = atan2(faceCenter.x - K_facetime(1, 3), K_facetime(1, 1));
     angled = angle * 180 / PI;
 
     cout << "angle: " << angled << endl;
+
+    if (DISPLAY) {
+      ellipse(frame, faceCenter, Size(face.width, face.height),
+          0, 0, 360, Scalar( 255, 0, 255 ), 4, 8, 0);
+      imshow(display_window, frame);
+    }
+      
     
     if(waitKey(30) >= 0) // spacebar
       break;
@@ -132,15 +137,31 @@ int roundUp(int numToRound, int multiple) {
   return numToRound + multiple - remainder;
 }
 
+bool compareBigger(Rect face1, Rect face2) { //biggest -> smallest
+  return face1.width * face1.height > face2.width * face2.height;
+}
+
+bool compareDistance(Rect face1, Rect face2) { //sort smallest -- biggest
+  Point2d priorFaceCenter(priorFace.x + priorFace.width/2, priorFace.y + priorFace.height/2);
+
+  double sq_x1 = pow(face1.x + face1.width/2 - priorFaceCenter.x, 2);
+  double sq_y1 = pow(face1.y + face1.height/2 - priorFaceCenter.y, 2);
+
+  double sq_x2 = pow(face2.x + face2.width/2 - priorFaceCenter.x, 2);
+  double sq_y2 = pow(face2.y + face2.height/2 - priorFaceCenter.y, 2);
+
+  return (sq_x1 + sq_y1) < (sq_x2 + sq_y2);
+
+}
+
 // Detect face and display it
-Point detectFace(Mat frame, Point priorCenter) {
+Rect detectFace(Mat frame) {
   
   std::vector<Rect> faces;
   Mat frame_gray, frame_lab, output, temp;
   int h = frame.size().height - 1;
   int w = frame.size().width - 1;
   int minNeighbors = 2;
-  bool faceNotFound = false;
 
   cvtColor(frame, frame_gray, COLOR_BGR2GRAY);   // Convert to gray
   equalizeHist(frame_gray, frame_gray);          // Equalize histogram
@@ -150,8 +171,28 @@ Point detectFace(Mat frame, Point priorCenter) {
 				1.1, minNeighbors,
 				0|CASCADE_SCALE_IMAGE, Size(30, 30));
 
+  if (faces.size() == 0) { //return old face
+    return priorFace;
+  }
+
+  //if priorCenter is not initalized, initialize to biggest face
+  if (priorFace.x == 0) { 
+    //sort by size to get biggest face
+    std::sort(faces.begin(), faces.end(), compareBigger); 
+  } else {
+    //sort by distance from prior face (farthest to nearest)
+    std::sort(faces.begin(), faces.end(), compareDistance); 
+  }
+  priorFace = Rect_<double>(faces[0].x, faces[0].y, faces[0].width, faces[0].height);
+  return priorFace;
+}
+  
+ /* 
+
   // iterate over faces
   for(size_t i = 0; i < faces.size(); i++) {
+    
+    
 
     // Find center of face
     Point center(faces[i].x + faces[i].width/2,
@@ -165,7 +206,7 @@ Point detectFace(Mat frame, Point priorCenter) {
     if(priorCenter.x == 0) {
       priorCenter = center;
       temp = outputFrame(frame, center, w, h);
-      break;
+      break;// get the first face
     }
     
     // Check to see if it's probably the same user
@@ -175,7 +216,7 @@ Point detectFace(Mat frame, Point priorCenter) {
       // Check to see if the user moved enough to update position
       if(abs(center.x - priorCenter.x) < 7 &&
 	 abs(center.y - priorCenter.y) < 7){
-	center = priorCenter;
+	center = priorCenter; //keep old center
       }
 
       // Smooth new center compared to old center
@@ -184,17 +225,20 @@ Point detectFace(Mat frame, Point priorCenter) {
       priorCenter = center;
       
       // output frame of only face
-      temp = outputFrame(frame, center, w, h);
+      //temp = outputFrame(frame, center, w, h);
                  
       break; // exit, primary users face probably found
       
-    } else {
+    } else { //new face region is different 
       faceNotFound = true;
     }
   }
 
-  if(faceNotFound) {
+//iterated through all faces, and primary user face not found
 
+  if(faceNotFound) {
+      
+    cout << "detect from eyes" << endl;
     // Findface from eyes
     Rect r(priorCenter.x, priorCenter.y, w, h);
     if(priorCenter.x + w > frame_gray.size().width - 2 &&
@@ -226,3 +270,4 @@ Point detectFace(Mat frame, Point priorCenter) {
   
   return priorCenter;
 }
+*/
