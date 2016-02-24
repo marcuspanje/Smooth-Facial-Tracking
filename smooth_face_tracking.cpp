@@ -3,6 +3,7 @@
 #include <iostream>
 #include <stdio.h>
 #include <cmath>
+#define PI 3.14159
 
 using namespace std;
 using namespace cv;
@@ -15,14 +16,26 @@ CascadeClassifier face_cascade, eyes_cascade;
 String display_window = "Display";
 String face_window = "Face View";
 
+/*camera calibration matrices */
+Matx33f K_logitech(1517.6023, 0, 959.5,  0, 1517.6023, 539.5, 0, 0, 1);
+Matx33f K_facetime(1006.2413, 0, 639.5, 0, 1006.2413, 359.5, 0, 0, 1);
+double f_logitech = 1517.6023;
+double f_facetime = 1006.2413;
+
 int main() {
 
   VideoCapture cap(0); // capture from default camera
   Mat frame;
-  Point priorCenter(0, 0);
+  Point priorCenter(0, 0);  
+  Matx31f priorCenterH(0, 0, 1); 
+  Matx31f priorCenter3D(0, 0, 0); 
+ // Mat priorCenterHomogenous(3, 1, CV_64F);
+  //P priorCenter3D(0, 0, 0);
+  double angle = 0;
+  double angled = 0;
 
-  face_cascade.load("classifiers/haarcascade_frontalface_alt.xml"); // load face classifiers
-  eyes_cascade.load("classifiers/haarcascade_eye_tree_eyeglasses.xml"); // load eye classifiers
+  face_cascade.load("src/classifiers/haarcascade_frontalface_alt.xml"); // load face classifiers
+  eyes_cascade.load("src/classifiers/haarcascade_eye_tree_eyeglasses.xml"); // load eye classifiers
 
   namedWindow(face_window,
 	      CV_WINDOW_AUTOSIZE |
@@ -34,6 +47,20 @@ int main() {
     
     // Apply the classifier to the frame, i.e. find face
     priorCenter = detectFace(frame, priorCenter);
+    cout << "x: " << priorCenter.x << ", y: " << priorCenter.y << endl;
+
+
+    //convert to angle 
+    priorCenterH(1, 1) = priorCenter.x;
+    priorCenterH(2, 1) = priorCenter.y;
+
+    priorCenter3D = K_facetime.inv() * priorCenterH; 
+
+
+    angle = atan2(priorCenter3D(1, 1), priorCenter3D(3, 1)); //theta = arctan(x/z)
+    angled = angle * 180 / PI;
+
+    cout << "angle: " << angled << endl;
     
     if(waitKey(30) >= 0) // spacebar
       break;
