@@ -1,36 +1,42 @@
 #include <opencv2/opencv.hpp>
-
 #include <iostream>
 #include <stdio.h>
 #include <cmath>
 #include <algorithm>
+#include <cassert>
+
 #define PI 3.14159
 #define DISPLAY 1
+#define TEST 0
 
 using namespace std;
 using namespace cv;
 
 /* Function Headers */
-Rect detectFace(Mat frame);
+void detectFace(Mat frame);
+bool compareBigger(Rect face1, Rect face2);
+bool compareDistance(Rect face1, Rect face2); 
+void test();
+
+/* global variables */
 Rect priorFace(0, 0, 0, 0);
-
 CascadeClassifier face_cascade, eyes_cascade;
-
 String display_window = "Display";
 String face_window = "Face View";
 
 /*camera calibration matrices */
-Matx33f K_logitech(1517.6023, 0, 0, 0, 959.5,  0, 1517.6023, 539.5, 1);
+Matx33f K_logitech(1517.6023, 0, 0, 0, 1517.6023, 0, 959.5, 539.5, 1);
 Matx33f K_facetime(1006.2413, 0, 0, 0, 1006.2413, 0, 639.5, 359.5, 1); //ordered by cols
 
 int main() {
+  if (TEST) {
+    test();
+    return 1;
+  }
 
   VideoCapture cap(0); // capture from default camera
   Mat frame;
-  Rect face; //primary face;
   Point faceCenter(0, 0);  
-  Matx31f priorCenterH(0, 0, 1); 
-  Matx31f priorCenter3D(0, 0, 0); 
   double angle = 0;
   double angled = 0;
 
@@ -52,16 +58,16 @@ int main() {
   while(cap.read(frame)) {
     
     // Apply the classifier to the frame, i.e. find face
-    face = detectFace(frame);
-    faceCenter.x = face.x + face.width/2;
-    faceCenter.y = face.y + face.height/2;
-    angle = atan2(faceCenter.x - K_facetime(1, 3), K_facetime(1, 1));
+    detectFace(frame);
+    faceCenter.x = priorFace.x + priorFace.width/2;
+    faceCenter.y = priorFace.y + priorFace.height/2;
+    angle = atan2(faceCenter.x - K_logitech(1, 3), K_logitech(1, 1));
     angled = angle * 180 / PI;
 
-    cout << "angle: " << angled << endl;
+    printf("faceX: %d, faceY: %d, angle: %.2f\n", faceCenter.x, faceCenter.y, angled); 
 
     if (DISPLAY) {
-      ellipse(frame, faceCenter, Size(face.width, face.height),
+      ellipse(frame, faceCenter, Size(priorFace.width/2, priorFace.height/2),
           0, 0, 360, Scalar( 255, 0, 255 ), 4, 8, 0);
       imshow(display_window, frame);
     }
@@ -74,72 +80,17 @@ int main() {
 }
 
 /**
- * Output a frame of only the the rectangle centered at point
- */
-Mat outputFrame(Mat frame, Point center, int w, int h) {
-
-  int x = (center.x - w/2);
-  int y = (center.y - 3*h/5);
-
-  if(x + w > frame.size().width - 2 || x < 0 ||
-     y + h > frame.size().height - 2 || y < 0 &&
-     frame.size().width > 16 &&
-     frame.size().height > 16)
-    return frame(Rect(5, 5, 10, 10));
-  
-  // output frame of only face
-  return frame(Rect(x, y, w, h));
-}
-
-// Find face from eyes
-Point faceFromEyes(Point priorCenter, Mat face) {
-
-  std::vector<Rect> eyes;
-  int avg_x = 0;
-  int avg_y = 0;
-
-  // Try to detect eyes, if no face is found
-  eyes_cascade.detectMultiScale(face, eyes, 1.1, 2,
-				0 |CASCADE_SCALE_IMAGE, Size(30, 30));
-
-  // Iterate over eyes
-  for(size_t j = 0; j < eyes.size(); j++) {
-
-    // centerpoint of eyes
-    Point eye_center(priorCenter.x + eyes[j].x + eyes[j].width/2,
-		     priorCenter.y + eyes[j].y + eyes[j].height/2);
-
-    // Average center of eyes
-    avg_x += eye_center.x;
-    avg_y += eye_center.y;
-  }
-
-  // Use average location of eyes
-  if(eyes.size() > 0) {
-    priorCenter.x = avg_x / eyes.size();
-    priorCenter.y = avg_y / eyes.size();
-  }
-
-  return priorCenter;
-}
-
-// Rounds up to multiple
-int roundUp(int numToRound, int multiple) {
-  
-  if (multiple == 0)
-    return numToRound;
-
-  int remainder = abs(numToRound) % multiple;
-  if (remainder == 0)
-    return numToRound;
-  if (numToRound < 0)
-    return -(abs(numToRound) - remainder);
-  return numToRound + multiple - remainder;
-}
+compare function
+return area(face1) > area(face2)
+*/
 
 bool compareBigger(Rect face1, Rect face2) { //biggest -> smallest
   return face1.width * face1.height > face2.width * face2.height;
 }
+/**
+compare function
+return distance_from_priorFace(face1) < distance_from_priorFace((face2)
+*/
 
 bool compareDistance(Rect face1, Rect face2) { //sort smallest -- biggest
   Point2d priorFaceCenter(priorFace.x + priorFace.width/2, priorFace.y + priorFace.height/2);
@@ -154,13 +105,16 @@ bool compareDistance(Rect face1, Rect face2) { //sort smallest -- biggest
 
 }
 
-// Detect face and display it
-Rect detectFace(Mat frame) {
+/** 
+Detect face and sets the global variable priorFace 
+If priorFace is uninitialized, set to biggest face.
+If multiple faces are found, set to face with nearest distance to priorFace.
+If no face is found, don't set to new value.
+*/
+void detectFace(Mat frame) {
   
   std::vector<Rect> faces;
-  Mat frame_gray, frame_lab, output, temp;
-  int h = frame.size().height - 1;
-  int w = frame.size().width - 1;
+  Mat frame_gray, frame_lab;
   int minNeighbors = 2;
 
   cvtColor(frame, frame_gray, COLOR_BGR2GRAY);   // Convert to gray
@@ -172,7 +126,7 @@ Rect detectFace(Mat frame) {
 				0|CASCADE_SCALE_IMAGE, Size(30, 30));
 
   if (faces.size() == 0) { //return old face
-    return priorFace;
+    return; 
   }
 
   //if priorCenter is not initalized, initialize to biggest face
@@ -184,90 +138,29 @@ Rect detectFace(Mat frame) {
     std::sort(faces.begin(), faces.end(), compareDistance); 
   }
   priorFace = Rect_<double>(faces[0].x, faces[0].y, faces[0].width, faces[0].height);
-  return priorFace;
+  return;
 }
+
+void test(){
+
+  priorFace = Rect_<double>(0, 0, 0, 0);
+  Rect f1(0, 0, 1, 1);
+  Rect f2(5, 6, 3, 3);
+  Rect f3(-1, -1, 2, 2); 
+  std::vector<Rect> faces;
+  faces.push_back(f1);
+  faces.push_back(f2);
+  faces.push_back(f3);
+  std::sort(faces.begin(), faces.end(), compareBigger);
+  assert(faces[0].x == 5);
+  assert(faces[1].x == -1);
+  assert(faces[2].x == 0);
+  cout << "sort compareBigger passed" << endl;
+
+  std::sort(faces.begin(), faces.end(), compareDistance);
+  assert(faces[0].x == -1);
+  assert(faces[1].x == 0);
+  assert(faces[2].x == 5);
+  cout << "sort compareDistance passed" << endl;
   
- /* 
-
-  // iterate over faces
-  for(size_t i = 0; i < faces.size(); i++) {
-    
-    
-
-    // Find center of face
-    Point center(faces[i].x + faces[i].width/2,
-		 faces[i].y + faces[i].height/2);
-
-    // Generate width and height of face, round to closest 1/4 of frame height
-    h = roundUp(faces[i].height, frame.size().height / 4);
-    w = 3 * h / 5;
-
-    // If priorCenter not yet initialized, initialize
-    if(priorCenter.x == 0) {
-      priorCenter = center;
-      temp = outputFrame(frame, center, w, h);
-      break;// get the first face
-    }
-    
-    // Check to see if it's probably the same user
-    if(abs(center.x - priorCenter.x) < frame.size().width / 6 &&
-       abs(center.y - priorCenter.y) < frame.size().height / 6) {
-
-      // Check to see if the user moved enough to update position
-      if(abs(center.x - priorCenter.x) < 7 &&
-	 abs(center.y - priorCenter.y) < 7){
-	center = priorCenter; //keep old center
-      }
-
-      // Smooth new center compared to old center
-      center.x = (center.x + 2*priorCenter.x) / 3;
-      center.y = (center.y + 2*priorCenter.y) / 3;
-      priorCenter = center;
-      
-      // output frame of only face
-      //temp = outputFrame(frame, center, w, h);
-                 
-      break; // exit, primary users face probably found
-      
-    } else { //new face region is different 
-      faceNotFound = true;
-    }
-  }
-
-//iterated through all faces, and primary user face not found
-
-  if(faceNotFound) {
-      
-    cout << "detect from eyes" << endl;
-    // Findface from eyes
-    Rect r(priorCenter.x, priorCenter.y, w, h);
-    if(priorCenter.x + w > frame_gray.size().width - 2 &&
-       priorCenter.y + h > frame_gray.size().height - 2){
-
-      priorCenter = faceFromEyes(priorCenter, frame_gray(r));
-    
-      // Generate temporary face location
-      temp = outputFrame(frame, priorCenter, w, h);
-    }    
-  }
-  
-  // Check to see if new face found
-  if(temp.size().width > 2)
-    output = temp;
-  else
-    output = frame;
-  
-  // Display only face
-  imshow(face_window, output);
-
-  if(output.size().width > 2)
-    // Draw ellipse around face
-    ellipse(frame, priorCenter, Size(w/2, h/2),
-	    0, 0, 360, Scalar( 255, 0, 255 ), 4, 8, 0);
-  
-  // Display output
-  imshow( display_window, frame );
-  
-  return priorCenter;
-}
-*/
+ } 
