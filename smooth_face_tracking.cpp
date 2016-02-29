@@ -4,6 +4,8 @@
 #include <cmath>
 #include <algorithm>
 #include <cassert>
+#include <serial/serial.h>
+#include <string>
 
 #define PI 3.14159
 #define DISPLAY 1
@@ -16,7 +18,9 @@ using namespace cv;
 void detectFace(Mat frame);
 bool compareBigger(Rect face1, Rect face2);
 bool compareDistance(Rect face1, Rect face2); 
+void writeToMbed(double angled, serial::Serial &mbed);
 void test();
+void testSerial(); 
 
 /* global variables */
 Rect priorFace(0, 0, 0, 0);
@@ -28,9 +32,16 @@ String face_window = "Face View";
 Matx33f K_logitech(1517.6023, 0, 0, 0, 1517.6023, 0, 959.5, 539.5, 1);
 Matx33f K_facetime(1006.2413, 0, 0, 0, 1006.2413, 0, 639.5, 359.5, 1); //ordered by cols
 
+/*angle look-up tables*/
+const float angleThreshold[15] = {-26, -22, -18, -14, -10, -6, -2, 2, 6, 10, 14, 18, 22, 26}; 
+
+/** serial connection */
+//serial::Serial mbed;
+//serial::Serial mbed(port, baud, serial::Timeout::simpleTimeout(1000)); 
+
 int main() {
   if (TEST) {
-    test();
+    testSerial();
     return 1;
   }
 
@@ -49,6 +60,20 @@ int main() {
     return -1;
   }
 
+ //serial::Serial mbed(port, baud, serial::Timeout::simpleTimeout(1000)); 
+  //serial::Serial mbed(port, baud, serial::Timeout::simpleTimeout(500));
+  unsigned long baud = 9600;
+  std::string port("/dev/tty.usbmodem1412");
+  serial::Serial mbed(port, baud, serial::Timeout::simpleTimeout(1000)); 
+
+  if (!mbed.isOpen()) {
+   
+    cout << "could not open connection with mbed" << endl;
+    return -1;
+  } else {
+    printf("mbed opened with baud rate:%u\n", mbed.getBaudrate());
+  }
+
   namedWindow(display_window,
 	      CV_WINDOW_NORMAL |
 	      CV_WINDOW_KEEPRATIO |
@@ -61,10 +86,11 @@ int main() {
     detectFace(frame);
     faceCenter.x = priorFace.x + priorFace.width/2;
     faceCenter.y = priorFace.y + priorFace.height/2;
-    angle = atan2(faceCenter.x - K_logitech(1, 3), K_logitech(1, 1));
+    angle = atan2(faceCenter.x - K_facetime(1, 3), K_facetime(1, 1));
     angled = angle * 180 / PI;
+    writeToMbed(angled, mbed);
 
-    printf("faceX: %d, faceY: %d, angle: %.2f\n", faceCenter.x, faceCenter.y, angled); 
+    //printf("faceX: %d, faceY: %d, angle: %.2f\n", faceCenter.x, faceCenter.y, angled); 
 
     if (DISPLAY) {
       ellipse(frame, faceCenter, Size(priorFace.width/2, priorFace.height/2),
@@ -77,6 +103,28 @@ int main() {
       break;
   }
   return 0;
+}
+
+/** 
+function that writes an int value to MBED based on angle value
+quantizes the angle into 16 ranges:
+{ -Inf to -26, -26 to 22, ... 26 to 30, 30 to 100(pseudo inf) }
+write an int based on the input range index
+*/
+void writeToMbed(double angled, serial::Serial &mbed) {
+  std::string angleString("15");
+  //only compare to second last threshold, since last is infinite
+  for (int i = 0; i < 15; i++) { 
+    if (angled < angleThreshold[i]) {
+      std::string angleString = std::to_string(i) + std::string("\n");
+      mbed.flushOutput(); //only write the most recent value
+      mbed.write(angleString);
+      return;
+    }
+  }
+//write 15 if haven't written yet
+  mbed.flushOutput(); //only write the most recent value
+  mbed.write(angleString);
 }
 
 /**
@@ -163,4 +211,55 @@ void test(){
   assert(faces[2].x == 5);
   cout << "sort compareDistance passed" << endl;
   
- } 
+} 
+
+void testSerial() {
+  unsigned long baud = 9600;
+  std::string port("/dev/tty.usbmodem1412");
+  serial::Serial mbed(port, baud, serial::Timeout::simpleTimeout(1000)); 
+
+/*
+  const uint8_t data[3] = "ab";
+  int nbuf = 32;
+  uint8_t buffer[nbuf];
+    //for (int i = 0; i < 20; i++) {
+    while(1) {
+      if (mbed.isOpen()) {
+        size_t available = mbed.available();
+        //printf("available: %u", available);
+        if (available > 0) {
+          if (available > nbuf) {
+            available = nbuf;
+          }
+          mbed.read(buffer, available);
+          printf("%s\n", (char *)buffer); 
+        }
+        
+      }
+  }
+*/
+  printf("baudrate: %u, isOpen: %d \n", mbed.getBaudrate(), mbed.isOpen()); 
+  int i = 0; 
+  size_t wrote;
+  std::string newl("\n");
+  const std::string testString("hello\n");
+  while(1) {
+    if (mbed.isOpen()) {
+      if (i >= 3) {
+        i = 0;
+      } else {
+        i++;
+      } 
+      std::string dat = to_string(i++);
+      dat = dat + newl;
+      mbed.flushOutput();
+      wrote = mbed.write((const std::string)dat);
+      //wrote = mbed.write(testString);
+    
+      printf("wrote: %lu\n", wrote);
+    }
+  }
+
+}
+    
+    
