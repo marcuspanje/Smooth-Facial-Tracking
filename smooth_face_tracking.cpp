@@ -33,7 +33,8 @@ Matx33f K_logitech(1517.6023, 0, 0, 0, 1517.6023, 0, 959.5, 539.5, 1);
 Matx33f K_facetime(1006.2413, 0, 0, 0, 1006.2413, 0, 639.5, 359.5, 1); //ordered by cols
 
 /*angle look-up tables*/
-const float angleThreshold[15] = {-26, -22, -18, -14, -10, -6, -2, 2, 6, 10, 14, 18, 22, 26}; 
+//const float angleThreshold[15] = {26, 22, 18, 14, 10, 6, 2, -2, -6, -10, -14, -18, -22, -26, -30}; 
+const float angleThreshold[15] = {-26, -22, -18, -14, -10, -6, -2, 2, 6, 10, 14, 18, 22, 26, 30}; 
 
 /** serial connection */
 //serial::Serial mbed;
@@ -47,6 +48,7 @@ int main() {
 
   VideoCapture cap(0); // capture from default camera
   Mat frame;
+  Mat oriFrame;
   Point faceCenter(0, 0);  
   double angle = 0;
   double angled = 0;
@@ -60,10 +62,8 @@ int main() {
     return -1;
   }
 
- //serial::Serial mbed(port, baud, serial::Timeout::simpleTimeout(1000)); 
-  //serial::Serial mbed(port, baud, serial::Timeout::simpleTimeout(500));
   unsigned long baud = 9600;
-  std::string port("/dev/tty.usbmodem1412");
+  std::string port("/dev/tty.usbmodem1422");
   serial::Serial mbed(port, baud, serial::Timeout::simpleTimeout(1000)); 
 
   if (!mbed.isOpen()) {
@@ -75,18 +75,19 @@ int main() {
   }
 
   namedWindow(display_window,
-	      CV_WINDOW_NORMAL |
+	      CV_WINDOW_AUTOSIZE |
 	      CV_WINDOW_KEEPRATIO |
 	      CV_GUI_EXPANDED);
   
   // Loop to capture frames
-  while(cap.read(frame)) {
+  while(cap.read(oriFrame)) {
+    cv::resize(oriFrame, frame, cv::Size(640, 480));
     
     // Apply the classifier to the frame, i.e. find face
     detectFace(frame);
     faceCenter.x = priorFace.x + priorFace.width/2;
     faceCenter.y = priorFace.y + priorFace.height/2;
-    angle = atan2(faceCenter.x - K_facetime(1, 3), K_facetime(1, 1));
+    angle = atan2(faceCenter.x - K_logitech(1, 3), K_logitech(1, 1));
     angled = angle * 180 / PI;
     writeToMbed(angled, mbed);
 
@@ -108,14 +109,14 @@ int main() {
 /** 
 function that writes an int value to MBED based on angle value
 quantizes the angle into 16 ranges:
-{ -Inf to -26, -26 to 22, ... 26 to 30, 30 to 100(pseudo inf) }
+{ -Inf to -26, -26 to 22, ... 26 to 30, 30 to Inf }
 write an int based on the input range index
 */
 void writeToMbed(double angled, serial::Serial &mbed) {
   std::string angleString("15");
   //only compare to second last threshold, since last is infinite
   for (int i = 0; i < 15; i++) { 
-    if (angled < angleThreshold[i]) {
+    if ((angled < angleThreshold[i]) && (mbed.isOpen())) {
       std::string angleString = std::to_string(i) + std::string("\n");
       mbed.flushOutput(); //only write the most recent value
       mbed.write(angleString);
