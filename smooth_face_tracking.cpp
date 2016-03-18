@@ -36,10 +36,6 @@ Matx33f K_facetime(1006.2413, 0, 0, 0, 1006.2413, 0, 639.5, 359.5, 1); //ordered
 //const float angleThreshold[15] = {26, 22, 18, 14, 10, 6, 2, -2, -6, -10, -14, -18, -22, -26, -30}; 
 const float angleThreshold[15] = {-26, -22, -18, -14, -10, -6, -2, 2, 6, 10, 14, 18, 22, 26, 30}; 
 
-/** serial connection */
-//serial::Serial mbed;
-//serial::Serial mbed(port, baud, serial::Timeout::simpleTimeout(1000)); 
-
 int main() {
   if (TEST) {
     testSerial();
@@ -48,7 +44,7 @@ int main() {
 
   VideoCapture cap(0); // capture from default camera
   Mat frame;
-  Mat oriFrame;
+  Mat displayFrame;
   Point faceCenter(0, 0);  
   double angle = 0;
   double angled = 0;
@@ -73,15 +69,16 @@ int main() {
   } else {
     printf("mbed opened with baud rate:%u\n", mbed.getBaudrate());
   }
-
-  namedWindow(display_window,
-	      CV_WINDOW_AUTOSIZE |
-	      CV_WINDOW_KEEPRATIO |
-	      CV_GUI_EXPANDED);
+  if (DISPLAY) {
+    namedWindow(display_window,
+          CV_WINDOW_AUTOSIZE |
+          CV_WINDOW_KEEPRATIO |
+          CV_GUI_EXPANDED);
+  }
   
   // Loop to capture frames
-  while(cap.read(oriFrame)) {
-    cv::resize(oriFrame, frame, cv::Size(640, 480));
+  while(cap.read(frame)) {
+//    cv::resize(oriFrame, frame, cv::Size(960, 720));
     
     // Apply the classifier to the frame, i.e. find face
     detectFace(frame);
@@ -96,6 +93,8 @@ int main() {
     if (DISPLAY) {
       ellipse(frame, faceCenter, Size(priorFace.width/2, priorFace.height/2),
           0, 0, 360, Scalar( 255, 0, 255 ), 4, 8, 0);
+    //cv::resize(frame, displayFrame, cv::Size(960, 720));
+      
       imshow(display_window, frame);
     }
       
