@@ -8,7 +8,7 @@
 #include <string>
 
 #define PI 3.14159
-#define DISPLAY 1
+#define DISPLAY 0
 #define TEST 0
 
 using namespace std;
@@ -88,14 +88,14 @@ int main() {
     angled = angle * 180 / PI;
     writeToMbed(angled, mbed);
 
-    //printf("faceX: %d, faceY: %d, angle: %.2f\n", faceCenter.x, faceCenter.y, angled); 
+    printf("faceX: %d, faceY: %d, angle: %.2f\n", faceCenter.x, faceCenter.y, angled); 
 
     if (DISPLAY) {
       ellipse(frame, faceCenter, Size(priorFace.width/2, priorFace.height/2),
           0, 0, 360, Scalar( 255, 0, 255 ), 4, 8, 0);
-    //cv::resize(frame, displayFrame, cv::Size(960, 720));
+      cv::resize(frame, displayFrame, cv::Size(960, 720));
       
-      imshow(display_window, frame);
+      imshow(display_window, displayFrame);
     }
       
     
