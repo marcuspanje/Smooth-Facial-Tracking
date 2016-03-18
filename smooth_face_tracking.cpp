@@ -88,7 +88,7 @@ int main() {
     angled = angle * 180 / PI;
     writeToMbed(angled, mbed);
 
-    printf("faceX: %d, faceY: %d, angle: %.2f\n", faceCenter.x, faceCenter.y, angled); 
+    //printf("faceX: %d, faceY: %d, angle: %.2f\n", faceCenter.x, faceCenter.y, angled); 
 
     if (DISPLAY) {
       ellipse(frame, faceCenter, Size(priorFace.width/2, priorFace.height/2),
@@ -118,6 +118,7 @@ void writeToMbed(double angled, serial::Serial &mbed) {
     if ((angled < angleThreshold[i]) && (mbed.isOpen())) {
       std::string angleString = std::to_string(i) + std::string("\n");
       mbed.flushOutput(); //only write the most recent value
+      cout << angleString;
       mbed.write(angleString);
       return;
     }
@@ -218,26 +219,6 @@ void testSerial() {
   std::string port("/dev/tty.usbmodem1412");
   serial::Serial mbed(port, baud, serial::Timeout::simpleTimeout(1000)); 
 
-/*
-  const uint8_t data[3] = "ab";
-  int nbuf = 32;
-  uint8_t buffer[nbuf];
-    //for (int i = 0; i < 20; i++) {
-    while(1) {
-      if (mbed.isOpen()) {
-        size_t available = mbed.available();
-        //printf("available: %u", available);
-        if (available > 0) {
-          if (available > nbuf) {
-            available = nbuf;
-          }
-          mbed.read(buffer, available);
-          printf("%s\n", (char *)buffer); 
-        }
-        
-      }
-  }
-*/
   printf("baudrate: %u, isOpen: %d \n", mbed.getBaudrate(), mbed.isOpen()); 
   int i = 0; 
   size_t wrote;
@@ -254,7 +235,6 @@ void testSerial() {
       dat = dat + newl;
       mbed.flushOutput();
       wrote = mbed.write((const std::string)dat);
-      //wrote = mbed.write(testString);
     
       printf("wrote: %lu\n", wrote);
     }
