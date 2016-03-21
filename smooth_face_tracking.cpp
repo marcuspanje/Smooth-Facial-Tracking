@@ -27,7 +27,7 @@ Rect priorFace(0, 0, 0, 0);
 CascadeClassifier face_cascade, eyes_cascade;
 String display_window = "Display";
 String face_window = "Face View";
-
+int frame_width = 0;
 /*camera calibration matrices */
 Matx33f K_logitech(1517.6023, 0, 0, 0, 1517.6023, 0, 959.5, 539.5, 1);
 Matx33f K_facetime(1006.2413, 0, 0, 0, 1006.2413, 0, 639.5, 359.5, 1); //ordered by cols
@@ -59,7 +59,7 @@ int main() {
   }
 
   unsigned long baud = 9600;
-  std::string port("/dev/tty.usbmodem1422");
+  std::string port("/dev/tty.usbmodem1412");
   serial::Serial mbed(port, baud, serial::Timeout::simpleTimeout(1000)); 
 
   if (!mbed.isOpen()) {
@@ -82,6 +82,7 @@ int main() {
     
     // Apply the classifier to the frame, i.e. find face
     detectFace(frame);
+    frame_width = frame.cols;
     faceCenter.x = priorFace.x + priorFace.width/2;
     faceCenter.y = priorFace.y + priorFace.height/2;
     angle = atan2(faceCenter.x - K_logitech(1, 3), K_logitech(1, 1));
@@ -93,9 +94,9 @@ int main() {
     if (DISPLAY) {
       ellipse(frame, faceCenter, Size(priorFace.width/2, priorFace.height/2),
           0, 0, 360, Scalar( 255, 0, 255 ), 4, 8, 0);
-    //cv::resize(frame, displayFrame, cv::Size(960, 720));
+      cv::resize(frame, displayFrame, cv::Size(960, 720));
       
-      imshow(display_window, frame);
+      imshow(display_window, displayFrame);
     }
       
     
@@ -151,6 +152,10 @@ bool compareDistance(Rect face1, Rect face2) { //sort smallest -- biggest
 
   return (sq_x1 + sq_y1) < (sq_x2 + sq_y2);
 
+}
+
+bool comparePeripheral(Rect face1, Rect face2) {
+  return (abs((face1.x + face1.width/2) - frame_width/2) > abs((face2.x + face2.width/2) - frame_width/2));
 }
 
 /** 
