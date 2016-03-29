@@ -25,6 +25,7 @@ void test();
 /* global variables */
 int frame_size = 0;
 std::vector<Rect> priorFaces;
+Rect currFace;
 CascadeClassifier face_cascade, eyes_cascade;
 String display_window = "Display";
 String face_window = "Face View";
@@ -94,7 +95,7 @@ void drawEllipses(Mat frame) {
       Point faceCenter(priorFace.x + priorFace.width/2, priorFace.y + priorFace.height/2);
       ellipse(frame, faceCenter, Size(priorFace.width/2, priorFace.height/2),
                         0, 0, 360, currColor, 4, 8, 0);
-     cout << "face: " << n << " x: " << priorFace.x << " y: " << priorFace.y << endl;
+    // (debugging)  cout << "face: " << n << " x: " << priorFace.x << " y: " << priorFace.y << endl;
    }
 }
 
@@ -134,12 +135,8 @@ bool comparePeripheral(Rect face1, Rect face2) {
 Class used to compare faces by closeness to another face.
 */
 
-class distanceSorter {
-    Rect priorFace;
-public:
-    distanceSorter(Rect f) : priorFace(f) {}
-    bool operator()(Rect face1, Rect face2) {
-        Point2d priorFaceCenter(priorFace.x + priorFace.width/2, priorFace.y + priorFace.height/2);
+bool compareDistance(Rect face1, Rect face2)  {
+        Point2d priorFaceCenter(currFace.x + currFace.width/2, currFace.y + currFace.height/2);
        
         double sq_x1 = pow(face1.x + face1.width/2 - priorFaceCenter.x, 2);
         double sq_y1 = pow(face1.y + face1.height/2 - priorFaceCenter.y, 2);
@@ -148,8 +145,7 @@ public:
         double sq_y2 = pow(face2.y + face2.height/2 - priorFaceCenter.y, 2);
 
         return (sq_x1 + sq_y1) < (sq_x2 + sq_y2);
-    } 
-};
+}
  
 /** 
 Detect face and sets the global variable priorFace 
@@ -198,7 +194,8 @@ void detectFace(Mat frame) {
          std::sort(faces.begin(), faces.end(), compareToMouse);
          priorFaces[j] = faces[j];
       } else if (!sortWithMouse){
-         std::sort(faces.begin(), faces.end(), distanceSorter(priorFaces[j])); //"+ j" is used to not 
+         currFace = priorFaces[j];
+         std::sort(faces.begin(), faces.end(), compareDistance); //Sort faces by distance to the face previously in that index.
          priorFaces[j] = faces[0];
       }
     }
