@@ -8,7 +8,7 @@
 #include <string>
 
 #define PI 3.14159
-#define DISPLAY 0
+#define DISPLAY 1
 #define TEST 0
 
 using namespace std;
@@ -60,6 +60,7 @@ int main() {
 
   unsigned long baud = 9600;
   std::string port("/dev/tty.usbmodem1422");
+/*
   serial::Serial mbed(port, baud, serial::Timeout::simpleTimeout(1000)); 
 
   if (!mbed.isOpen()) {
@@ -69,6 +70,7 @@ int main() {
   } else {
     printf("mbed opened with baud rate:%u\n", mbed.getBaudrate());
   }
+*/
   if (DISPLAY) {
     namedWindow(display_window,
           CV_WINDOW_AUTOSIZE |
@@ -86,7 +88,7 @@ int main() {
     faceCenter.y = priorFace.y + priorFace.height/2;
     angle = atan2(faceCenter.x - K_logitech(1, 3), K_logitech(1, 1));
     angled = angle * 180 / PI;
-    writeToMbed(angled, mbed);
+ //   writeToMbed(angled, mbed);
 
     //printf("faceX: %d, faceY: %d, angle: %.2f\n", faceCenter.x, faceCenter.y, angled); 
 
