@@ -10,6 +10,7 @@
 #define PI 3.14159
 #define DISPLAY 1
 #define TEST 0
+#define CAM 1
 
 using namespace std;
 using namespace cv;
@@ -18,22 +19,28 @@ using namespace cv;
 void detectFace(Mat frame);
 bool compareBigger(Rect face1, Rect face2);
 bool compareDistance(Rect face1, Rect face2); 
+bool comparePeripheral(Rect face1, Rect face2); 
+void setMouseLocation(int event, int x, int y, int, void*); 
 void writeToMbed(double angled, serial::Serial &mbed);
 void test();
 void testSerial(); 
 
 /* global variables */
 Rect priorFace(0, 0, 0, 0);
+vector<Rect> faces;
 CascadeClassifier face_cascade, eyes_cascade;
 String display_window = "Display";
 String face_window = "Face View";
+Point mouseLocation(0, 0);
+int newMouseClick = 0;
 int frame_width = 0;
+
+int mouseCounter = 0;
 /*camera calibration matrices */
 Matx33f K_logitech(1517.6023, 0, 0, 0, 1517.6023, 0, 959.5, 539.5, 1);
 Matx33f K_facetime(1006.2413, 0, 0, 0, 1006.2413, 0, 639.5, 359.5, 1); //ordered by cols
 
 /*angle look-up tables*/
-//const float angleThreshold[15] = {26, 22, 18, 14, 10, 6, 2, -2, -6, -10, -14, -18, -22, -26, -30}; 
 const float angleThreshold[15] = {-26, -22, -18, -14, -10, -6, -2, 2, 6, 10, 14, 18, 22, 26, 30}; 
 
 int main() {
@@ -45,10 +52,25 @@ int main() {
   VideoCapture cap(0); // capture from default camera
   Mat frame;
   Mat displayFrame;
+  double scale = 2.0;
   Point faceCenter(0, 0);  
   double angle = 0;
   double angled = 0;
+  double w_half, h_half;
+  unsigned long baud = 9600;
+  std::string port("/dev/tty.usbmodem1412");
+  serial::Serial mbed(port, baud, serial::Timeout::simpleTimeout(1000)); 
+  Matx33f K;
+  if (CAM == 0) {
+    K = K_facetime; 
+  } else {
+    K = K_logitech;
+  }
 
+  //initialize frame dimensions
+  int displayW = cvRound(cap.get(CV_CAP_PROP_FRAME_WIDTH)/scale);
+  int displayH = cvRound(cap.get(CV_CAP_PROP_FRAME_HEIGHT)/scale);
+  
   if (!(face_cascade.load("src/classifiers/haarcascade_frontalface_alt.xml"))) {
     cout << "error loading face classifier" << endl;
     return -1;
@@ -58,55 +80,74 @@ int main() {
     return -1;
   }
 
-  unsigned long baud = 9600;
-/*
-=======
-  std::string port("/dev/tty.usbmodem1412");
-  serial::Serial mbed(port, baud, serial::Timeout::simpleTimeout(1000)); 
-
   if (!mbed.isOpen()) {
-   
     cout << "could not open connection with mbed" << endl;
     return -1;
   } else {
     printf("mbed opened with baud rate:%u\n", mbed.getBaudrate());
   }
-*/
+
   if (DISPLAY) {
     namedWindow(display_window,
           CV_WINDOW_AUTOSIZE |
           CV_WINDOW_KEEPRATIO |
           CV_GUI_EXPANDED);
+    setMouseCallback(display_window, setMouseLocation, NULL);
+
   }
-  
   // Loop to capture frames
   while(cap.read(frame)) {
-//    cv::resize(oriFrame, frame, cv::Size(960, 720));
+    cv::resize(frame, displayFrame, cv::Size(displayW, displayH));
     
     // Apply the classifier to the frame, i.e. find face
-    detectFace(frame);
-    frame_width = frame.cols;
-    faceCenter.x = priorFace.x + priorFace.width/2;
-    faceCenter.y = priorFace.y + priorFace.height/2;
-    angle = atan2(faceCenter.x - K_logitech(1, 3), K_logitech(1, 1));
-    angled = angle * 180 / PI;
- //   writeToMbed(angled, mbed);
+    detectFace(displayFrame);
+    w_half = priorFace.width/2;
+    h_half = priorFace.height/2;
+    faceCenter.x = priorFace.x + w_half;
+    faceCenter.y = priorFace.y + h_half;
+    angled = fastAtan2(scale*faceCenter.x - K(1, 3), K(1, 1));
+    //angled = angle * 180 / PI;
+    writeToMbed(angled, mbed);
 
     //printf("faceX: %d, faceY: %d, angle: %.2f\n", faceCenter.x, faceCenter.y, angled); 
 
     if (DISPLAY) {
-      ellipse(frame, faceCenter, Size(priorFace.width/2, priorFace.height/2),
+      //selected face is pink
+      ellipse(displayFrame, faceCenter, Size(w_half, h_half),
           0, 0, 360, Scalar( 255, 0, 255 ), 4, 8, 0);
-      cv::resize(frame, displayFrame, cv::Size(960, 720));
-      
+      //other faces are white
+      for (int i = 1; i < faces.size(); i++) {
+        w_half = faces[i].width/2;
+        h_half = faces[i].height/2;
+        faceCenter.x = faces[i].x + w_half;
+        faceCenter.y = faces[i].y + h_half;
+        ellipse(displayFrame, faceCenter, Size(w_half, h_half),
+          0, 0, 360, Scalar( 255, 255, 255 ), 4, 8, 0);
+      }
       imshow(display_window, displayFrame);
     }
+
+    faces.clear();
       
-    
     if(waitKey(30) >= 0) // spacebar
       break;
   }
   return 0;
+
+}
+
+/** 
+  callback function when mouse is clicked
+  set priorFace to face closest to mouse click
+*/
+void setMouseLocation(int event, int x, int y, int, void*) {
+  if (event == EVENT_LBUTTONDOWN || event == EVENT_RBUTTONDOWN) {
+    mouseLocation.x = x;
+    mouseLocation.y = y;
+    newMouseClick = event;
+    cout << "click" << event << endl;
+    
+  }
 }
 
 /** 
@@ -120,14 +161,12 @@ void writeToMbed(double angled, serial::Serial &mbed) {
   //only compare to second last threshold, since last is infinite
   for (int i = 0; i < 15; i++) { 
     if ((angled < angleThreshold[i]) && (mbed.isOpen())) {
-      std::string angleString = std::to_string(i) + std::string("\n");
-      mbed.flushOutput(); //only write the most recent value
-      cout << angleString;
-      mbed.write(angleString);
-      return;
+      angleString = std::to_string(i) + std::string("\n");
+      break;
     }
   }
 //write 15 if haven't written yet
+  cout << angleString;
   mbed.flushOutput(); //only write the most recent value
   mbed.write(angleString);
 }
@@ -170,7 +209,6 @@ If no face is found, don't set to new value.
 */
 void detectFace(Mat frame) {
   
-  std::vector<Rect> faces;
   Mat frame_gray, frame_lab;
   int minNeighbors = 2;
 
@@ -182,19 +220,40 @@ void detectFace(Mat frame) {
 				1.1, minNeighbors,
 				0|CASCADE_SCALE_IMAGE, Size(30, 30));
 
-  if (faces.size() == 0) { //return old face
+//if mouse has been left clicked, set priorFace to that face (Track that face)
+//if mouse has been right clicked, set face to that location and don't track
+  if (newMouseClick) {
+    //arbitrary size needed in case click is R to draw the ellipse
+    priorFace.x = mouseLocation.x - 50;
+    priorFace.y = mouseLocation.y - 50;
+    priorFace.width = 100;
+    priorFace.height = 100;
+  //only L click deactivates the lock
+    if (newMouseClick == EVENT_RBUTTONDOWN) {
+      faces.clear();
+      return;
+    }  else {
+      newMouseClick = 0; 
+    }
+  } 
+
+  if (faces.size() == 0) { // no face detected return old face
     return; 
   }
 
-  //if priorCenter is not initalized, initialize to biggest face
+  //if priorCenter is not initalized, initialize to most peripheral face
   if (priorFace.x == 0) { 
-    //sort by size to get biggest face
-    std::sort(faces.begin(), faces.end(), compareBigger); 
+    std::sort(faces.begin(), faces.end(), comparePeripheral); 
   } else {
     //sort by distance from prior face (farthest to nearest)
     std::sort(faces.begin(), faces.end(), compareDistance); 
   }
-  priorFace = Rect_<double>(faces[0].x, faces[0].y, faces[0].width, faces[0].height);
+
+  //record face0 as priorFace for future sorting
+  priorFace.x = faces[0].x; 
+  priorFace.y = faces[0].y;
+  priorFace.width = faces[0].width;
+  priorFace.height = faces[0].height;
   return;
 }
 
