@@ -30,7 +30,6 @@ Rect priorFace(0, 0, 0, 0);
 vector<Rect> faces;
 CascadeClassifier face_cascade, eyes_cascade;
 String display_window = "Display";
-String face_window = "Face View";
 Point mouseLocation(0, 0);
 int newMouseClick = 0;
 int frame_width = 0;
@@ -67,6 +66,8 @@ int main() {
     K = K_logitech;
   }
 
+  const String displayText = "L-click a face to track it. R-click a point to lock onto it";
+  Point org(50, 50);
   //initialize frame dimensions
   int displayW = cvRound(cap.get(CV_CAP_PROP_FRAME_WIDTH)/scale);
   int displayH = cvRound(cap.get(CV_CAP_PROP_FRAME_HEIGHT)/scale);
@@ -106,10 +107,13 @@ int main() {
     faceCenter.x = priorFace.x + w_half;
     faceCenter.y = priorFace.y + h_half;
     angled = fastAtan2(scale*faceCenter.x - K(1, 3), K(1, 1));
+    if (angled > 180) {
+      angled = 360.0 - angled;
+    }
     //angled = angle * 180 / PI;
     writeToMbed(angled, mbed);
 
-    //printf("faceX: %d, faceY: %d, angle: %.2f\n", faceCenter.x, faceCenter.y, angled); 
+    printf("faceX: %d, faceY: %d, angle: %.2f\n", faceCenter.x, faceCenter.y, angled); 
 
     if (DISPLAY) {
       //selected face is pink
@@ -124,7 +128,9 @@ int main() {
         ellipse(displayFrame, faceCenter, Size(w_half, h_half),
           0, 0, 360, Scalar( 255, 255, 255 ), 4, 8, 0);
       }
+      putText(displayFrame, displayText, Point(30, 30), FONT_HERSHEY_PLAIN, 1.0, Scalar(0, 0, 0));
       imshow(display_window, displayFrame);
+      
     }
 
     faces.clear();
@@ -167,8 +173,8 @@ void writeToMbed(double angled, serial::Serial &mbed) {
   }
 //write 15 if haven't written yet
   cout << angleString;
-  mbed.flushOutput(); //only write the most recent value
   mbed.write(angleString);
+  mbed.flushOutput(); //only write the most recent value
 }
 
 /**
