@@ -57,7 +57,7 @@ int main() {
   double angled = 0;
   double w_half, h_half;
   unsigned long baud = 9600;
-  std::string port("/dev/tty.usbmodem1412");
+  std::string port("/dev/tty.usbmodem1422");
   serial::Serial mbed(port, baud, serial::Timeout::simpleTimeout(1000)); 
   Matx33f K;
   if (CAM == 0) {
@@ -106,11 +106,14 @@ int main() {
     h_half = priorFace.height/2;
     faceCenter.x = priorFace.x + w_half;
     faceCenter.y = priorFace.y + h_half;
-    angled = fastAtan2(scale*faceCenter.x - K(1, 3), K(1, 1));
+    //angled = fastAtan2(scale*faceCenter.x - K(1, 3), K(1, 1));
+    angled = atan2(scale*faceCenter.x - K(1, 3), K(1, 1));
+    angled = angled * 180 / PI;
+/*
     if (angled > 180) {
       angled = 360.0 - angled;
     }
-    //angled = angle * 180 / PI;
+*/
     writeToMbed(angled, mbed);
 
     printf("faceX: %d, faceY: %d, angle: %.2f\n", faceCenter.x, faceCenter.y, angled); 
@@ -163,7 +166,7 @@ quantizes the angle into 16 ranges:
 write an int based on the input range index
 */
 void writeToMbed(double angled, serial::Serial &mbed) {
-  std::string angleString("15");
+  std::string angleString("15\n");
   //only compare to second last threshold, since last is infinite
   for (int i = 0; i < 15; i++) { 
     if ((angled < angleThreshold[i]) && (mbed.isOpen())) {
@@ -173,8 +176,8 @@ void writeToMbed(double angled, serial::Serial &mbed) {
   }
 //write 15 if haven't written yet
   cout << angleString;
-  mbed.write(angleString);
   mbed.flushOutput(); //only write the most recent value
+  mbed.write(angleString);
 }
 
 /**
