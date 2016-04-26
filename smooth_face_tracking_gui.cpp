@@ -1,14 +1,15 @@
 #include <opencv2/opencv.hpp>
-#include <iostream>
-#include <stdio.h>
-#include <cmath>
+#include <iostream> 
+#include <stdio.h> 
+#include <cmath> 
 #include <algorithm>
 #include <cassert>
 #include <serial/serial.h>
 #include <string>
 
 #define PI 3.14159
-#define DISPLAY 1
+#define SERIAL 1
+#define DISPLAY 0
 #define TEST 0
 #define CAM 1
 
@@ -49,6 +50,9 @@ int main() {
   }
 
   VideoCapture cap(0); // capture from default camera
+  cap.set(CV_CAP_PROP_FRAME_WIDTH, 1920);
+  cap.set(CV_CAP_PROP_FRAME_HEIGHT, 1080);
+
   Mat frame;
   Mat displayFrame;
   double scale = 2.0;
@@ -57,8 +61,19 @@ int main() {
   double angled = 0;
   double w_half, h_half;
   unsigned long baud = 9600;
-  std::string port("/dev/tty.usbmodem1422");
-  serial::Serial mbed(port, baud, serial::Timeout::simpleTimeout(1000)); 
+  serial::Timeout timeout = serial::Timeout::simpleTimeout(1000);
+  std::string port("/dev/ttyACM3");
+  serial::Serial mbed;
+  //serial::Serial mbed(port, baud, serial::Timeout::simpleTimeout(1000)); 
+
+
+  if (SERIAL) {
+    mbed.setPort(port);
+    mbed.setTimeout(timeout);
+    mbed.setBaudrate(baud);
+    mbed.open();
+  }
+
   Matx33f K;
   if (CAM == 0) {
     K = K_facetime; 
@@ -81,11 +96,13 @@ int main() {
     return -1;
   }
 
-  if (!mbed.isOpen()) {
-    cout << "could not open connection with mbed" << endl;
-    return -1;
-  } else {
-    printf("mbed opened with baud rate:%u\n", mbed.getBaudrate());
+  if (SERIAL) {
+    if (!mbed.isOpen()) {
+      cout << "could not open connection with mbed" << endl;
+      return -1;
+    } else {
+      printf("mbed opened with baud rate:%u\n", mbed.getBaudrate());
+    }
   }
 
   if (DISPLAY) {
@@ -114,7 +131,9 @@ int main() {
       angled = 360.0 - angled;
     }
 */
-    writeToMbed(angled, mbed);
+    if (SERIAL) {
+      writeToMbed(angled, mbed);
+    }
 
     printf("faceX: %d, faceY: %d, angle: %.2f\n", faceCenter.x, faceCenter.y, angled); 
 
@@ -178,6 +197,7 @@ void writeToMbed(double angled, serial::Serial &mbed) {
   cout << angleString;
   mbed.flushOutput(); //only write the most recent value
   mbed.write(angleString);
+  
 }
 
 /**
@@ -292,7 +312,7 @@ void test(){
 
 void testSerial() {
   unsigned long baud = 9600;
-  std::string port("/dev/tty.usbmodem1412");
+  std::string port("/dev/ttyACM2");
   serial::Serial mbed(port, baud, serial::Timeout::simpleTimeout(1000)); 
 
   printf("baudrate: %u, isOpen: %d \n", mbed.getBaudrate(), mbed.isOpen()); 
@@ -307,12 +327,12 @@ void testSerial() {
       } else {
         i++;
       } 
-      std::string dat = to_string(i++);
+      std::string dat = to_string(i);
       dat = dat + newl;
-      mbed.flushOutput();
+   //   mbed.flushOutput();
       wrote = mbed.write((const std::string)dat);
     
-      printf("wrote: %lu\n", wrote);
+      printf("wrote: %d\n", i);
     }
   }
 
